@@ -1,0 +1,118 @@
+@startuml
+' --- Definición de Participantes ---
+actor "chofer:Chofer" as Chofer
+actor "pasajero:Pasajero" as Pasajero
+participant "ctrl:ControladorSUBE" as Controlador
+participant "tarjeta:TarjetaSUBE" as Tarjeta
+
+' Catálogo y Búsqueda
+participant "catalogo:CatalogoDestinos" as CatalogoDestinos
+participant "Destinos[d]:Destino" as DestinoItem 
+participant "destinoEncontrado:Destino" as DestinoEncontrado
+
+
+' --- NUEVO: Para registrar la transacción (Patrón Ej 7/8) ---
+participant "viaje:Viaje" as ViajeActual
+participant "<<multiobjetos>>RegistroViajes:Viaje" as RegistroViajes
+
+' 1. Ingreso de datos
+Chofer -> Controlador: ingresarDestino(nombreDestino: String)
+activate Controlador
+
+' 2. Búsqueda (Patrón Bucle Corregido)
+Controlador -> CatalogoDestinos: buscarDestino(nombreDestino: String)
+activate CatalogoDestinos
+
+    loop para cada d en CatalogoDestinos
+        ' Truco visual: Separador dentro del loop
+        CatalogoDestinos -> DestinoItem: getNombre()
+        activate DestinoItem
+        DestinoItem --> CatalogoDestinos: <<nombreActual: String>>
+        deactivate DestinoItem
+        
+        ' CORRECCIÓN PROFE: Comparación correcta y recuperar objeto
+        note right of CatalogoDestinos
+            Si nombreActual = nombreDestino:
+              destinoEncontrado = Destinos[d]
+              cortar iteracion
+        end note
+    end
+
+' CORRECCIÓN PROFE: Devolver el objeto completo
+CatalogoDestinos --> Controlador: <<destinoEncontrado: Destino>>
+deactivate CatalogoDestinos
+
+' --- Verificación 1: Destino (Fail Fast) ---
+alt Destino No encontrado
+    Controlador --> Chofer: <<DestinoNoEncontrado: string>>
+
+else Destino Encontrado
+    ' Pedimos el precio al objeto encontrado
+    Controlador -> DestinoEncontrado: getPrecio()
+    activate DestinoEncontrado
+    DestinoEncontrado --> Controlador: <<precioDestino: real>>
+    deactivate DestinoEncontrado
+
+    Controlador --> Chofer: <<Importe:float>>
+    
+    ' 3. Pasajero acerca tarjeta
+    ' CORRECCIÓN PROFE: Se pasan datos primitivos
+    Pasajero -> Controlador: IngresarDatosTarjeta(numeroTarjeta: int, Saldo: real)
+    
+    ' 4. Verificación de Tarjeta Válida (Camino Alternativo 4.a)
+    Controlador -> Tarjeta: validarTarjeta(numeroTarjeta: int)
+    activate Tarjeta
+    Tarjeta --> Controlador : <<esValida: boolean>>
+    
+    
+    alt Tarjeta No Valida
+        Tarjeta --> Controlador: <<TarjetaNoValida: boolean>>
+        deactivate Tarjeta
+        Controlador --> Pasajero: <<TarjetaNoValida: boolean>>
+        
+        
+        
+    else Tarjeta Valida
+        ' 5. Procesamiento del Pago
+       
+        
+        Controlador -> Tarjeta: getSaldo()
+        activate Tarjeta
+        Tarjeta --> Controlador: <<saldoActual: real>>
+        
+
+        ' --- Verificación de Saldo (Fail Fast) ---
+        alt Saldo Insuficiente
+            Tarjeta --> Controlador: <<SaldoInsuficiente: real>>
+            deactivate Tarjeta
+            Controlador --> Pasajero: <<SaldoInsuficiente: real>>
+            
+        else Saldo Suficiente
+            ' CAMINO BUENO
+            Controlador -> Tarjeta: descontar(precioDestino: real)
+            activate Tarjeta
+            Tarjeta --> Controlador: <<nuevoSaldo: real>>
+            deactivate Tarjeta
+            
+            ' --- NUEVO: REGISTRO DE TRANSACCIÓN (Patrón Ej 7/8) ---
+            ' 1. Creamos el objeto del viaje
+            create ViajeActual
+            Controlador -> ViajeActual: create(destinoEncontrado, precioDestino, fecha, hora)
+            
+            
+            ' 2. Guardamos en el multiobjeto
+            Controlador -> RegistroViajes: add(ViajeActual)
+            activate RegistroViajes
+            RegistroViajes --> Controlador: <<registrado: Boolean>>
+            deactivate RegistroViajes
+            ' ------------------------------------------------------
+            
+            Controlador --> Pasajero: <<SaldoRestante: real>>
+            deactivate ViajeActual
+            deactivate Controlador
+        end
+    end
+end
+
+@enduml
+

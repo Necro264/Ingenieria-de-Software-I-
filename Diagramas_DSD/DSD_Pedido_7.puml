@@ -1,0 +1,118 @@
+@startuml
+' --- Definición de Participantes ---
+actor "cliente:Cliente" as Cliente
+participant "ctrl:ControladorPedido" as Pedido
+participant "catalogo:CatalogoStock" as CatalogoStock
+' CORRECCIÓN: El nombre del participante iterado
+participant "ProductoDisp[i]:Producto" as ProductoItem
+participant "productoEncontrado:Producto" as ProductoEncontrado
+participant "p:Pedido" as PedidoActual
+participant "validador:ValidadorZona" as ValidadorZona
+participant "servicio:ServicioNotificaciones" as Notificaciones
+participant "<<multiobjetos>>Pedidos:Pedido" as ListaPedidos
+
+
+' 1. El cliente selecciona un producto
+Cliente -> Pedido: SeleccionarProducto(ProductoID: String, Cantidad: Real)
+activate Pedido
+
+Pedido -> PedidoActual: create(ProductoID: String, Cantidad: Real)
+activate PedidoActual
+
+' 2. Búsqueda en el catálogo
+Pedido -> CatalogoStock: getProducto(ProductoID: String)
+activate CatalogoStock
+
+    ' CORRECCIÓN: Loop sobre la colección ProductoDisp
+    loop para cada i en ProductoDisp
+        |||
+        CatalogoStock -> ProductoItem: getId()
+        activate ProductoItem
+        ProductoItem --> CatalogoStock: <<id: String>>
+        deactivate ProductoItem
+        
+        note right of CatalogoStock
+            Si id = ProductoID:
+              productoEncontrado = ProductoDisp[i]
+              cortar iteracion
+        end note
+    end
+    
+' Devuelve el objeto encontrado
+CatalogoStock --> Pedido: <<productoEncontrado: Producto>>
+deactivate CatalogoStock
+
+' --- Verificaciones ---
+alt producto no encontrado
+    Pedido --> Cliente: <<Producto no encontrado>>
+
+else productoEncontrado 
+    ' CORRECCIÓN: Llamamos a productoEncontrado, NO al iterador
+    Pedido -> ProductoEncontrado: getStockActual()
+    activate ProductoEncontrado
+    ProductoEncontrado --> Pedido: <<stock: int>>
+    deactivate ProductoEncontrado
+    
+    alt no hay stock
+        Pedido --> Cliente: <<No hay stock>>
+
+    else Hay stock
+        ' CORRECCIÓN: Llamamos a productoEncontrado
+        Pedido -> ProductoEncontrado: getPrecio()
+        activate ProductoEncontrado
+        ProductoEncontrado --> Pedido: <<Precio: Real>>
+        deactivate ProductoEncontrado
+
+        note right of Pedido: MontoParcial = Producto * Cantidad
+
+        ' Calculamos monto parcial
+        Pedido -> PedidoActual: getMontoParcial(Precio: Real, Cantidad: Real)
+        PedidoActual --> Pedido: <<MontoParcial: Real>>
+        
+        ' CORRECCIÓN: Pasamos el objeto productoEncontrado
+        Pedido -> PedidoActual: setProductoYTotalParcial(productoEncontrado: Producto, Cantidad: Real, MontoParcial: Real)
+
+        Pedido --> Cliente: <<Solicita datos personales>>
+        deactivate Pedido
+        
+        ' 3. Ingreso de datos
+        Cliente -> Pedido: ingresarDatosCliente(nombre: String, direccion: String, telefono: String, email: String)
+        activate Pedido
+        
+        Pedido -> PedidoActual: setDatosCliente(nombre: String, direccion: String, telefono: String, email: String)
+
+        ' 4. Validar zona
+        Pedido -> ValidadorZona: verificarZonaEntrega(direccion: String)
+        activate ValidadorZona
+        ValidadorZona --> Pedido: <<EnZona: Boolean>>
+        deactivate ValidadorZona
+
+        alt Dirección fuera de zona
+            Pedido --> Cliente: <<Fuera de zona>>
+
+        else Está en zona
+            ' 5. Calcular total
+            note right of Pedido: MontoTotal = MontoParcial + $500 (Costo Envio)
+            Pedido -> PedidoActual: getMontoTotal()
+            PedidoActual --> Pedido: <<MontoTotal: Real>>
+            deactivate PedidoActual
+            ' CORRECCIÓN: Registrar en el MULTIOBJETO
+            Pedido -> ListaPedidos: add(p:pedido)
+            activate ListaPedidos
+            ListaPedidos --> Pedido: <<registrado: Boolean>>
+            deactivate ListaPedidos
+
+            ' Notificaciones
+            Pedido -> Notificaciones: EnviarTodasNotificaciones(PedidoActual: Pedido)
+            activate Notificaciones
+            Notificaciones --> Pedido: <<NotificacionesEnviadas: Boolean>>
+            deactivate Notificaciones
+            
+            ' 6. Éxito
+            Pedido --> Cliente: <<Pedido exitoso>>
+            deactivate Pedido
+        end
+    end
+end
+
+@enduml

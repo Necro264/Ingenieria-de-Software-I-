@@ -1,0 +1,103 @@
+@startuml
+' --- Definición de Participantes ---
+actor "cliente:Cliente" as Cliente
+participant "ctrl:ControladorReserva" as Controlador
+participant "catalogo:CatalogoVuelos" as CatalogoVuelos
+' CORRECCIÓN: Nombre del participante iterado (siguiendo patrón del Ej. 7)
+participant "VuelosDisp[v]:Vuelo" as VueloItem
+participant "vueloEncontrado:Vuelo" as VueloEncontrado
+participant "<<multiobjetos>>Reservas:Reserva" as ListaReservas
+participant "reserva:Reserva" as ReservaActual
+participant "proc:ProcesadorPagos" as ProcesadorPagos
+participant "srv:ServicioNotificaciones" as Notificaciones
+
+' 1. El cliente inicia sesión e ingresa los datos del viaje
+Cliente -> Controlador: BuscarVuelos(CiudadDeOrigen: string, Destino: string, FechaSalida: Fecha, FechaRegreso: Fecha)
+activate Controlador
+
+note right of Controlador: DatosViaje = CiudadDeOrigen, Destino, FechaSalida, FechaRegreso 
+
+' --- LÓGICA DE BÚSQUEDA (Patrón Ej. 7) ---
+Controlador -> CatalogoVuelos: ConsultarVuelos(DatosViaje)
+activate CatalogoVuelos
+
+    ' Bucle sobre la colección de vuelos disponibles
+    loop Para cada v en VuelosDisp
+        |||
+        CatalogoVuelos -> VueloItem: getDatosViaje()
+        activate VueloItem
+        VueloItem --> CatalogoVuelos: <<CiudadDeOrigen, Destino, Fechas>>
+        deactivate VueloItem
+        
+        note right of CatalogoVuelos
+            Si Datos coinciden:
+              vueloEncontrado = VuelosDisp[v]
+              cortar iteracion 
+        end note
+    end
+    
+' Devolvemos el OBJETO encontrado
+CatalogoVuelos --> Controlador: <<vueloEncontrado: Vuelo>>
+deactivate CatalogoVuelos
+
+
+' Mostramos los datos del vuelo encontrado
+Controlador --> Cliente: <<vueloEncontrado: Vuelo>>
+    
+' 3. Selección
+Cliente -> Controlador: seleccionarVuelo(vueloID: String)
+    
+
+' 4. Obtener detalles (Directo al objeto, como en Ej. 7)
+Controlador -> VueloEncontrado: getDetalles()
+activate VueloEncontrado
+VueloEncontrado --> Controlador: <<resumen: String>>
+deactivate VueloEncontrado
+    
+Controlador -> VueloEncontrado: getPrecio()
+activate VueloEncontrado
+VueloEncontrado --> Controlador: <<Precio: Real>>
+deactivate VueloEncontrado
+
+Controlador --> Cliente: <<resumen: String, Precio: Real>>
+deactivate Controlador
+
+' 5. Completar reserva
+Cliente -> Controlador: completarReserva(nombre: string, Apellido: string, contacto: string, numTarjeta: int, vencimiento: fecha)
+activate Controlador
+
+' CORRECCIÓN: Pasamos el OBJETO vueloEncontrado (Patrón Ej. 7)
+create ReservaActual
+Controlador -> ReservaActual: create(vueloEncontrado:Vuelo, nombre: string, Apellido: string contacto: string)
+activate ReservaActual
+    
+' La Reserva calcula su propio total pidiéndole el precio al vuelo
+Controlador -> ReservaActual: getMontoTotal()
+ReservaActual -> Controlador: <<MontoTotal>>
+deactivate ReservaActual
+
+' 6. Pago
+Controlador -> ProcesadorPagos: procesarPago(numTarjeta: int, vencimiento: Fecha, precio: Real)
+activate ProcesadorPagos
+ProcesadorPagos --> Controlador: <<confirmacionPago: Boolean>>
+deactivate ProcesadorPagos
+    
+' Registro en MULTIOBJETO
+Controlador -> ListaReservas: add(reserva:Reserva)
+activate ListaReservas
+ListaReservas --> Controlador: <<registrada: Boolean>>
+deactivate ListaReservas
+
+' Notificaciones
+Controlador -> Notificaciones: enviarEmailConfirmacion(reserva:Reserva)
+activate Notificaciones
+Notificaciones --> Controlador: <<emailEnviado: Boolean>>
+deactivate Notificaciones
+
+' 7. Confirmación    
+Controlador --> Cliente: <<reservaConfirmada: Boolean>>
+deactivate Controlador
+
+deactivate ReservaActual
+
+@enduml
